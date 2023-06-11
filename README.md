@@ -1,20 +1,73 @@
 # GlobalUrbanFloodMapping
-This repository contains the code and data used in our reseach.
+This repository contains the code and data used in our research "Impact of flood on global land cover changes after 2015." The code and data in this repository are currently only used for publicly sharing our data and code for review purposes.
 
-### Data
-#### Flood Maps
+##### - Please note that this code repository is still under development, and there may be cases where the code or data is incomplete. We kindly ask for your patience as we continue to upload and provide updates. We apologize for any inconvenience caused.
+
+## App
+Our flood detection results Earth Engine App can be accessed here: https://2100271039.users.earthengine.app/view/flooddetect. This app can be used to access our corresponding detection results based on filtering criteria such as time and location.
+#
+
+## Code
+All code is stored in the `Code` folder. For all code written using the JavaScript version of Earth Engine API, it is located in `Code/js`. Similarly, for all code written using the Python version of Earth Engine API, it is stored in `Code/py`.
+### Requirements and Usage Instructions
+#### JavaScript Code
+- All code written using the JavaScript version of the Earth Engine API is saved in `.txt` format.
+- These files are provided for easy downloading, copying, and pasting by readers.
+- To reproduce our results, simply copy the code from the `.txt` file and run it in the Earth Engine Code Editor.
+- All of these Python codes were written by Kuan Wei. If you encounter any issues while running the code, please feel free to contact Kuan Wei. He is one of the maintainers of this code repository, and you can find him among the code contributors.
+
+#### Python Code
+- All code written using the Python version of the Earth Engine API is saved in `.py` format.
+- These files have been tested and produced results successfully in the Anaconda 3 environment (Python 3.9).
+- Please note that running the code in different Python versions may yield slight variations in the results.
+- We do not guarantee the performance of the code in environments beyond our tested conditions.
+- All of these Python codes were written by Ruzheng Li. If you encounter any issues while running the code, please feel free to contact Ruzheng Li. He is one of the maintainers of this code repository, and you can find him among the code contributors.
+  
+### Code Files and their Corresponding Functionality Descriptions
+#### JavaScript Code
+1. `Fixed.txt`: Flood Detection Code - Fixed Threshold Method
+This code implements the functionality of flood detection using the fixed threshold method. It determines the flood-affected areas by comparing the pixel values of an image with a predefined threshold.
+2. `NDFI.txt`: Flood Detection Code - NDFI Method
+This code implements the functionality of flood detection using the NDFI (Normalized Difference Flood Index) method. NDFI is a technique that identifies floods by calculating the normalized difference index of multispectral images.
+3. `Otsu.txt`: : Flood Detection Code - Otsu Method
+This code implements the functionality of flood detection using the Otsu method. Otsu method is an adaptive thresholding algorithm based on image histograms, which automatically selects the optimal threshold for flood detection.
+4. `Sentinel1ImagesCoverage.txt`: Sentinel-1 Global Image Coverage Counting Code
+This code is used to calculate the number of Sentinel-1 radar images covering different regions globally. It analyzes the Sentinel-1 radar image dataset and provides statistics on image coverage across the world.
+5. `ValidationTool.txt`: Flood Detection Method Validation Tool Code
+This code provides a tool for validating flood detection methods. It enables evaluation and comparison of input data to validate the accuracy and reliability of the developed flood detection methods.
+
+#### Python Code
+1. `DynamicWorldBeforeAndAfterAreaCalculation.py`: Flood-affected Area Calculation on Dynamic World Images
+This code calculates the changes in land coverage area in flood-affected regions using Dynamic World images. By comparing pre and post-flood images, it determines the impact of floods on land area.
+2. `DynamicWorldBeforeAndAfterSampling.py`: Land Trend Analysis on Dynamic World Images in Flood-affected Areas
+This code performs land trend analysis in flood-affected regions using Dynamic World images. By comparing pre and post-flood images, it samples the changes in land characteristics to study and analyze the effects of floods.
+3. `ExposedPop.py`: Population Exposure Calculation in Flood-affected Areas using WorldPop Images
+This code calculates the population exposure in flood-affected areas using WorldPop images. By integrating flood extent and population distribution data, it estimates the impact of floods on the population, providing insights for disaster management and response.
+
+#
+
+## Data
+Our publicly available experimental data is stored in the 'Data' directory. Below are the descriptions of each type of data generated by our code, along with their corresponding file names:
+### Flood Maps
 
 Flood maps for the three methods (Fixed, Otsu, NDFI) can be viewed online on the Google Earth Engine (GEE) platform:
 https://2110276222.users.earthengine.app/view/gfad
 
 
-#### Flood Events
-1. `emdat_public_2022_10_08.xlsx`: All Flood Events available from the Emergency Events Database (EM-DAT) (2015-2022).
-2. `Total_flood_event_ID.csv`: Flood events following reclassification by first level district.
+### Flood Events
+1. `flood_events/emdat_public_2022_10_08.xlsx`: All Flood Events available from the Emergency Events Database (EM-DAT) (2015-2022).
+2. `flood_events/Total_flood_event_ID.csv`: Flood events following reclassification by first level district.
 
 
-#### Validation
-3. `Validation\uniqueID_300.csv`: Contains the IDs of all flood events used for validation.
-4. `Validation\Total_Sample_uniqueID3.csv`: Analyst samples(polygon) of all flood/non-flood markers for flood events. The first column is the marking category (flood/non-flood), the second column is the coordinates of the marking point, and the third column is the ID of the flood event plus the name of the marking person.
+### Validation
+1. `Validation\uniqueID_300.csv`: Contains the IDs of all flood events used for validation.
+2. `Validation\Total_Sample_uniqueID3.csv`: Analyst samples(polygon) of all flood/non-flood markers for flood events. The first column is the marking category (flood/non-flood), the second column is the coordinates of the marking point, and the third column is the ID of the flood event plus the name of the marking person.
 How to verify: Upload the above two files to GEE and run the following code to calculate the accuracy https://code.earthengine.google.com/0460d00668ce03a9576de42b16f562fb?noload=true
-5. `Validation\Box Graph`: This folder contains the accuracy verified by the three methods and is also the data used to draw the boxplot
+3. `Validation\Box Graph`: This folder contains the accuracy verified by the three methods and is also the data used to draw the boxplot
+
+### Result Data
+1. `flood_area_gfad_events.csv`: Statistical analysis of flood disaster areas corresponding to all GFAD flood maps.
+2. `land_cover_area_gfad_events.xlsx`: Statistical analysis of land cover impact areas before and after GFAD flood events.
+3. `pop_gfad_events_yearly.csv`: Yearly population statistics exposed to GFAD recorded flood events.
+
+#
