@@ -1,0 +1,105 @@
+var level2_dataset = ee.FeatureCollection("FAO/GAUL/2015/level2");
+var level1_dataset = ee.FeatureCollection("FAO/GAUL/2015/level1");
+
+/**
+ * Function to process the given emdatID.
+ * @param {ee.Feature} emdatID - The emdatID feature.
+ */
+function processEmdatID(emdatID) {
+  var emDatEventID = emdatID.get("Dis_No").getInfo(); //'2015-0220-CHN'
+
+  var AMDIndex = emDatEventID
+    .split("-")
+    .slice(-1)
+    .map(function (code) {
+      return ee.Number.parse(code);
+    });
+
+  var ADMCODE12 = ee.List(AMDIndex).slice(-1);
+
+  // Find the information corresponding to the event from Em-Dat table
+  var emdatEvent = emdatID; //table.filterMetadata('Dis_No', 'equals', emDatEventID).first();//
+
+  // Get the start and end dates of the flood event
+  var floodDate = ee.Date.fromYMD(
+    emdatEvent.get("Start_Year"),
+    emdatEvent.get("Start_Month"),
+    emdatEvent.get("Start_Day")
+  );
+  var floodEndDate = ee.Date.fromYMD(
+    emdatEvent.get("End_Year"),
+    emdatEvent.get("End_Month"),
+    emdatEvent.get("End_Day")
+  );
+
+  var adm_level = emdatEvent.get("Adm_Level").getInfo();
+
+  if (adm_level == "2") {
+    // Level 2 administrative division
+    var lv2Data = ee
+      .String(emdatEvent.get("Admin2_Code"))
+      .split(";")
+      .map(function (code) {
+        return ee.Number.parse(code);
+      });
+    var ROI = level2_dataset.filter(ee.Filter.inList("ADM2_CODE", ADMCODE12));
+    var emdatEvent_ap = emdatID;
+  } else {
+    // Level 1 administrative division
+    var lv1Data = ee
+      .String(emdatEvent.get("Admin1_Code"))
+      .split(";")
+      .map(function (code) {
+        return ee.Number.parse(code);
+      });
+    var ROI = level1_dataset.filter(ee.Filter.inList("ADM1_CODE", ADMCODE12));
+    var emdatEvent_ap = emdatID.set("ADM2_CODE", 0).set("ADM2_NAME", "");
+  }
+
+  var ROI_area = ee.Number.parse(
+    ROI.geometry().area(10).divide(1000000).format("%.4f")
+  ); // Convert m^2 to km^2
+  floodEndDate = floodEndDate.advance(5, "day");
+
+  var s1_collection = ee
+    .ImageCollection("COPERNICUS/S1_GRD")
+    .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VV"))
+    .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VH"))
+    .filter(ee.Filter.eq("instrumentMode", "IW"))
+    .filterBounds(ROI)
+    .filter(ee.Filter.date(floodDate, floodEndDate));
+
+  var s1_DateCol = s1_collection.map(function (image) {
+    return image.set("Date", image.date().format("YYYY-MM"));
+  });
+
+  // Check which sensor/relative orbit combinations we have
+  var s1_Date = ee.Dictionary(s1_DateCol.aggregate_histogram("Date"));
+  var s1Count = s1_collection.size();
+
+  var Flood_Duration = floodEndDate.difference(floodDate, "days");
+
+  var output = ee
+    .Feature(null, {
+      S1_Count: s1Count,
+      End_Date_End_Day_Add_5: floodEndDate.format("YYYY-MM-dd"),
+      Start_Date: floodDate.format("YYYY-MM-dd"),
+      Flood_Duration_Day: Flood_Duration,
+      ROI_Area_Km2: ROI_area,
+      S1_Date: s1_Date,
+    })
+    .copyProperties(emdatEvent_ap, null, null);
+
+  Export.table.toDrive({
+    collection: ee.FeatureCollection([output]),
+    folder: "S1_S2_ImageCount_2023510",
+    description: emDatEventID,
+    fileFormat: "CSV",
+  });
+}
+
+var emdatSize = table.size();
+var emdatList = table.toList(emdatSize);
+for (var i = 100; i < 200; i++) {
+  processEmdatID(ee.Feature(emdatList.get(i)));
+}
