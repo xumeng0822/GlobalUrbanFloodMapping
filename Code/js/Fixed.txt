@@ -1,0 +1,246 @@
+var emdatTable = ee.FeatureCollection(
+  "projects/ee-2100271039/assets/Emdat2ADM1_2"
+);
+var gaul_lv2_dataset = ee.FeatureCollection("FAO/GAUL/2015/level2");
+var gaul_lv1_dataset = ee.FeatureCollection("FAO/GAUL/2015/level1");
+
+function floodDetection(emdatID) {
+  var emDatEventID = emdatID.get("Dis_No").getInfo(); //'2015-0220-CHN'
+
+  var AMDIndex = emDatEventID
+    .split("-")
+    .slice(-1)
+    .map(function (code) {
+      return ee.Number.parse(code);
+    });
+
+  var ADMCODE12 = ee.List(AMDIndex).slice(-1);
+
+  // Find event information from Em-Dat table
+  var emdatEvent = emdatID; //emdatTable.filterMetadata('Dis_No', 'equals', emDatEventID).first();
+
+  // Get start and end dates
+  var floodDate = ee.Date.fromYMD(
+    emdatEvent.get("Start_Year"),
+    emdatEvent.get("Start_Month"),
+    emdatEvent.get("Start_Day")
+  );
+  var floodEndDate = ee.Date.fromYMD(
+    emdatEvent.get("End_Year"),
+    emdatEvent.get("End_Month"),
+    emdatEvent.get("End_Day")
+  );
+
+  var adm_level = emdatEvent.get("Adm_Level").getInfo();
+
+  if (adm_level == "2") {
+    // Level 2 administrative region
+    var lv2Data = ee
+      .String(emdatEvent.get("Admin2_Code"))
+      .split(";")
+      .map(function (code) {
+        return ee.Number.parse(code);
+      });
+    var ROI = gaul_lv2_dataset.filter(ee.Filter.inList("ADM2_CODE", ADMCODE12));
+    var emdatEvent_ap = emdatID;
+  } else {
+    // Level 1 administrative region
+    var lv1Data = ee
+      .String(emdatEvent.get("Admin1_Code"))
+      .split(";")
+      .map(function (code) {
+        return ee.Number.parse(code);
+      });
+    var ROI = gaul_lv1_dataset.filter(ee.Filter.inList("ADM1_CODE", ADMCODE12));
+    var emdatEvent_ap = emdatID.set("ADM2_CODE", "").set("ADM2_NAME", "");
+  }
+
+  // Parameter setting
+  Map.addLayer(ROI, {}, "ROI", 1, 0.2);
+  Map.centerObject(ROI, 9); // Scale: 9.554628535647032
+  var ROI_area = ee.Number.parse(
+    ROI.geometry().area(10).divide(1000000).format("%.4f")
+  ); // Convert m^2 to km^2
+
+  var before_start = floodDate.advance(-60, "day");
+  var before_end = floodDate;
+  var flood_end = floodEndDate.advance(5, "day");
+  print("Flood event start and end dates:", floodDate, "to", floodEndDate);
+  var flood_threshold = -5; // Flood threshold
+  var clustered_pix_threshold = 70; // Clustered pixel threshold
+
+  var collection = ee
+    .ImageCollection("COPERNICUS/S1_GRD")
+    .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VV"))
+    .filter(ee.Filter.listContains("transmitterReceiverPolarisation", "VH"))
+    .filter(ee.Filter.eq("instrumentMode", "IW"))
+    .filterBounds(ROI);
+
+  var before = collection
+    .filter(ee.Filter.date(before_start, before_end))
+    .sort("system:time_start");
+  var flood = collection
+    .filter(ee.Filter.date(floodDate, flood_end))
+    .sort("system:time_start");
+  print("Before flood:", before);
+  print("Flood:", flood);
+
+  // Count the S1 image dates
+  var before_dates = before
+    .map(function (image) {
+      return ee.Feature(null, { date: image.date().format("YYYY-MM-dd") });
+    })
+    .distinct("date")
+    .aggregate_array("date");
+  var flood_date = flood
+    .map(function (image) {
+      return ee.Feature(null, { date: image.date().format("YYYY-MM-dd") });
+    })
+    .distinct("date")
+    .aggregate_array("date");
+
+  var compute_precipit = function (element) {
+    var dayOfInterest = ee.Date(element);
+    var value_precipit = ee
+      .ImageCollection("NASA/GPM_L3/IMERG_V06")
+      .filterDate(dayOfInterest, dayOfInterest.advance(1, "day"))
+      .filterBounds(ROI)
+      .sum()
+      .reduceRegion({
+        reducer: ee.Reducer.sum(),
+        geometry: ROI,
+        scale: 11132,
+      })
+      .get("precipitationCal");
+    var precipit_devide_area = ee.Number(value_precipit).divide(ROI_area);
+    var precipit_threshold = ee.Number(0.23);
+    var precipit_result = ee.Algorithms.If(
+      precipit_devide_area.gte(precipit_threshold),
+      null,
+      element
+    );
+    return precipit_result;
+  };
+
+  var precipit_need = before_dates.map(compute_precipit).removeAll([null]);
+
+  var convertSystemTimeToEeDate = function (img_convert) {
+    return img_convert.set(
+      "Date",
+      ee.Date(img_convert.get("system:time_start")).format("YYYY-MM-dd")
+    );
+  };
+
+  var low_rainfall_images = before
+    .map(convertSystemTimeToEeDate)
+    .filter(ee.Filter.inList("Date", precipit_need));
+  var bf_dataset = ee.ImageCollection(low_rainfall_images);
+  var mean_bf = bf_dataset.select("VV").mean().clip(ROI);
+  Map.addLayer(mean_bf, { min: -40, max: 5 }, "mean_bf", 1);
+  var min_flood = flood.select("VV").min().clip(ROI);
+  /////////////////////////////////////////////////////
+  // remove black boundary
+  var rv_boundary = min_flood.gte(-30);
+  min_flood = min_flood.updateMask(rv_boundary);
+  Map.addLayer(min_flood, { min: -40, max: 5 }, "afrv_min_flood", 1);
+  /////////////////////////////////////////////////////
+  var dem = ee.Image("NASA/NASADEM_HGT/001").select("elevation").clip(ROI);
+  var slope = ee.Terrain.slope(dem);
+  var slope_thresh = slope.lte(5);
+  var dem_thresh = dem.lte(800);
+  // single flood image detect
+  var img = min_flood;
+  var fsub = min_flood.subtract(mean_bf);
+
+  var fsub_result = fsub.lte(flood_threshold);
+
+  fsub_result = fsub_result.and(slope_thresh).and(dem_thresh);
+
+  var remove_small = fsub_result.selfMask().connectedPixelCount({
+    maxSize: 128,
+    eightConnected: false,
+  });
+
+  var rs = remove_small.lte(clustered_pix_threshold);
+  var rs2 = rs.not();
+  var remove_small2 = remove_small.updateMask(rs2);
+  remove_small2 = remove_small2.gte(1);
+  var fmode = remove_small2.focal_mode({
+    radius: 1,
+    kernelType: "square",
+    units: "pixels",
+    iterations: 1,
+  });
+
+  // JRC
+  var gsw = ee.Image("JRC/GSW1_3/GlobalSurfaceWater");
+  var occurrence = gsw.select("occurrence").clip(ROI);
+  var VIS_OCCURRENCE = {
+    min: 0,
+    max: 100,
+    palette: ["red", "green"],
+  };
+  var gsw_binary = occurrence.gte(50); //50% occurrence water
+  var remove_gsw = fmode.where(gsw_binary, 0).selfMask();
+
+  var result_dem = remove_gsw.and(slope_thresh).and(dem_thresh).selfMask(); //.reproject({crs:'EPSG:4326',scale:200});
+  Map.addLayer(result_dem, { palette: ["#0f9dff"] }, "result_dem");
+
+  var pixelArea = ee.Image.pixelArea();
+  var flood_area = result_dem.multiply(pixelArea);
+
+  var element = ROI.first();
+  var ef_area = flood_area.reduceRegion({
+    reducer: ee.Reducer.sum(),
+    geometry: ee.FeatureCollection([element]),
+    crs: "EPSG:4326",
+    scale: 10,
+    maxPixels: 1e13,
+  });
+  var Area2Km = ee.Number(ef_area.get("VV")).divide(1e6).format("%.4f");
+
+  flood_threshold = ee.Number(flood_threshold).format("%.4f");
+  var output = ee
+    .Feature(null, {
+      Flood_Affected_Area_Km2: Area2Km,
+      Flood_Threshold: flood_threshold,
+      ROIArea_Km2: ROI_area,
+    })
+    .copyProperties(emdatEvent_ap, null, null);
+
+  var final_result = result_dem
+    .set(
+      "Flood_Affected_Area_Km2",
+      Area2Km,
+      "Flood_Threshold",
+      flood_threshold,
+      "ROIArea_Km2",
+      ROI_area
+    )
+    .copyProperties(emdatEvent_ap, null, null);
+
+  Export.table.toDrive({
+    collection: ee.FeatureCollection([output]),
+    folder: "OutputFile_Filexd",
+    description: emDatEventID + "_Filexd",
+    fileFormat: "CSV",
+  });
+
+  Export.image.toAsset({
+    image: final_result,
+    description: emDatEventID + "_Filexd",
+    assetId: "projects/ee-2100271039/assets/" + emDatEventID + "_Filexd", //
+    region: ROI,
+    crs: "EPSG:4326",
+    scale: 10,
+    maxPixels: 1e13,
+  });
+  var ImageName = "projects/ee-2100271039/assets/" + emDatEventID + "_Filexd";
+  var image_exported = ee.Image(ImageName); //.reproject({crs:'EPSG:4326',scale:10});
+  print("flood_image", image_exported);
+  Map.addLayer(image_exported, { palette: ["red"] }, "flood_image", 1);
+}
+
+var emdatsize = table.size();
+var emdatlist = table.toList(emdatsize);
+fdt(ee.Feature(emdatlist.get(1430)));
